@@ -4,43 +4,79 @@ import * as db_service from "../../DB/db.service.js"
 import userModel from "../../DB/models/user.model.js"
 import {encrypt,decrypt} from "../../common/utiltis/security/encrypt.security.js"
 import {compare,hash} from "../../common/utiltis/security/hash.security.js"
-import jwt from "jsonwebtoken"
-import {v4 as uuidv4} from "uuid"
 import {VerifyToken,GenerateToken} from "../../common/utiltis/token.service.js"
-import { sendEmail } from "../../common/utiltis/email.service.js";
-import { encryptRSA } from "../../common/utiltis/asymmetric.security.js";
+import {OAuth2Client} from 'google-auth-library'
+import {salt_rounds,secret_key} from "../../../config/config.service.js"
 
-export const signUp = async (req,res,next)=> {
-    const {userName,email,password,phone,gender} = req.body
-    if(
-        await db_service.findOne({
-            model: userModel,
-            filter:{email}
-        })
-    ){
-        throw new Error("email already exist")
+
+export const signUp = async (req, res, next) => {
+    const { userName, email, password, cPassword, gender, phone } = req.body
+
+    if (password !== cPassword) {
+        throw new Error("inValid password", { cause: 400 });
     }
+
+    if (await db_service.findOne({ model: userModel, filter: { email } })) {
+        throw new Error("email already exist", { cause: 409 });
+    }
+
     const user = await db_service.create({
-        model: userModel, 
-        data:{
+        model: userModel,
+        data: {
             userName,
             email,
-            password:hash({plainText:password}),
+            password: hash({ plain_text: password, salt_rounds: salt_rounds }),
             gender,
-            phone:encrypt(phone)}
+            phone: encrypt(phone)
+        }
     })
 
-    const otp = Math.floor(100000 + Math.random() * 900000)
-    const encryptedOtp = encryptRSA(String(otp));
-
-    await sendEmail({
-        to: email,
-        subject: "Your OTP for Saraha",
-        text: `Your OTP (encrypted): ${encryptedOtp}`
-    })
-
-    successResponse({res,status:201,data:user})
+    successResponse({ res, status: 201, message: "success signup", data: user })
 }
+
+
+export const signupWithGmail = async (req,res,next)=> {
+    const { idToken } = req.body
+
+    const client = new OAuth2Client();
+    const ticket = await client.verifyIdToken({
+        idToken,
+        audience: "1018473995710-dr1je7i7uqd9edtj9inoa2v2bprv2hsh.apps.googleusercontent.com",  
+        
+    });
+    const payload = ticket.getPayload();
+    console.log(payload)
+    const {email,email_verified,name,picture } = payload
+    let user = await db_service.findOne({model: userModel, filter:{email}})
+
+    if (!user) {
+        user = await db_service.create({
+            model: userModel,
+            data:{
+                email,
+                confirmed: email_verified,
+                userName: name,
+                profilePicture: picture,
+                provider: providerEnum.google
+            }
+        })
+    }
+
+    if(user.provider==providerEnum.system){
+        throw new Eroor("please log in on system only",{cause:400})
+ 
+    }
+
+    const access_token = GenerateToken({
+        payload:{id:user._id, email:user.email},
+        secret_key: secret_key,
+        options: {expiresIn:60*3}
+    })
+
+    successResponse({res, message: "success signUp" , data: {access_token}})
+
+}
+    
 
 export const signIn = async (req,res,next)=> {
     const {email,password} = req.body
@@ -71,6 +107,6 @@ export const signIn = async (req,res,next)=> {
 
 
 export const getProfile = async (req,res,next)=> {
-    successResponse({res,message: "done" , data: req.user })
+    successResponse({res, message:"done", data: req.user })
 }
 

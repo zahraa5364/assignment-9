@@ -6,7 +6,6 @@ import * as db_service from "../../DB/db.service.js"
 
 export const authentication =async (req,res,next) => {
     const {authorization} = req.headers
-
     if(!authorization){
         throw new Error("token not exist")
     }
