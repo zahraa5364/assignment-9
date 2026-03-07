@@ -7,6 +7,9 @@ import {compare,hash} from "../../common/utiltis/security/hash.security.js"
 import {VerifyToken,GenerateToken} from "../../common/utiltis/token.service.js"
 import {OAuth2Client} from 'google-auth-library'
 import {salt_rounds,secret_key} from "../../../config/config.service.js"
+import cloudinary from "../../common/utiltis/cloudinary.js"
+
+
 
 
 export const signUp = async (req, res, next) => {
@@ -20,6 +23,19 @@ export const signUp = async (req, res, next) => {
         throw new Error("email already exist", { cause: 409 });
     }
 
+    const {secure_url,public_id} = await cloudinary.uploader.upload(req.file.path,{
+        folder: "sarahaApp",
+        // public_id: "ahmed"
+        // use_filename: true
+        // unique_filename: false 
+        // resource_type:"image"
+    })
+
+    // let arr_paths =[]
+    // for (const file of req.files){
+    //     arr_paths.push(file.path)
+    // }
+
     const user = await db_service.create({
         model: userModel,
         data: {
@@ -27,7 +43,9 @@ export const signUp = async (req, res, next) => {
             email,
             password: hash({ plain_text: password, salt_rounds: salt_rounds }),
             gender,
-            phone: encrypt(phone)
+            phone: encrypt(phone),
+            profilePicture: {secure_url,public_id}
+            // coverPictures: arr_paths
         }
     })
 
@@ -63,7 +81,7 @@ export const signupWithGmail = async (req,res,next)=> {
     }
 
     if(user.provider==providerEnum.system){
-        throw new Eroor("please log in on system only",{cause:400})
+        throw new Error("please log in on system only",{cause:400})
  
     }
 
@@ -94,7 +112,7 @@ export const signIn = async (req,res,next)=> {
 
     const access_token = GenerateToken({
         payload:{id:user._id, email:user.email},
-        secret_key: "ahmed",
+        secret_key: secret_key,
         options: {expiresIn:60*3,
         // issuer: "http://localhost:300",
         // audience: "http://localhost:4000", 
@@ -108,5 +126,23 @@ export const signIn = async (req,res,next)=> {
 
 export const getProfile = async (req,res,next)=> {
     successResponse({res, message:"done", data: req.user })
+}
+
+export const shareProfile = async (req, res, next) => {
+
+    const { id } = req.params
+
+    const user = await db_service.findById({
+        model: userModel,
+        id,
+        select: "-password"
+    })
+
+    if (!user) {
+        throw new Error("user not exist yet");
+    }
+    user.phone = decrypt(user.phone)
+
+    successResponse({ res, data: user })
 }
 
