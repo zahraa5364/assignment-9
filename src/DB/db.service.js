@@ -17,6 +17,10 @@ export const find = async ({ model, filter = {}, options = {} } = {}) => {
     return await doc.exec()
 }
 
+export const findById = async ({ model, id, select }) => {
+    return model.findById(id).select(select)
+}
+
 export const updateOne = async ({ model, filter = {}, update = {}, options = {} } = {}) => {
     return await model.updateOne(filter, update, { runValidators: true, ...options })
 }

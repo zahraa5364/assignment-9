@@ -1,4 +1,4 @@
-import { providerEnum } from "../../common/enum/user.enum.js"
+import { providerEnum, roleEnum } from "../../common/enum/user.enum.js"
 import {successResponse} from "../../common/utiltis/response.success.js"
 import * as db_service from "../../DB/db.service.js"
 import userModel from "../../DB/models/user.model.js"
@@ -6,10 +6,8 @@ import {encrypt,decrypt} from "../../common/utiltis/security/encrypt.security.js
 import {compare,hash} from "../../common/utiltis/security/hash.security.js"
 import {VerifyToken,GenerateToken} from "../../common/utiltis/token.service.js"
 import {OAuth2Client} from 'google-auth-library'
-import {salt_rounds,secret_key} from "../../../config/config.service.js"
+import {salt_rounds,secret_key,refresh_secret_key,PREFIX} from "../../../config/config.service.js"
 import cloudinary from "../../common/utiltis/cloudinary.js"
-
-
 
 
 export const signUp = async (req, res, next) => {
@@ -112,7 +110,7 @@ export const signIn = async (req,res,next)=> {
 
     const access_token = GenerateToken({
         payload:{id:user._id, email:user.email},
-        secret_key: secret_key,
+        secret_key:  secret_key ,
         options: {expiresIn:60*3,
         // issuer: "http://localhost:300",
         // audience: "http://localhost:4000", 
@@ -120,7 +118,14 @@ export const signIn = async (req,res,next)=> {
         }
     })
 
-    successResponse({res,data: {access_token}})
+    const refresh_token = GenerateToken({
+        payload:{id:user._id, email:user.email},
+        secret_key: refresh_secret_key,
+        options: {expiresIn:"1y"}
+    })
+
+
+    successResponse({res,data: {access_token,refresh_token}})
 }
 
 
@@ -146,3 +151,95 @@ export const shareProfile = async (req, res, next) => {
     successResponse({ res, data: user })
 }
 
+
+export const refresh_token = async (req,res,next)=> {
+    const { authorization } = req.headers
+
+    if(!authorization){
+            throw new Error("token not exist")
+        }
+    
+        const [prefix,token]= authorization.split(" ")
+        if (prefix !== PREFIX){
+            throw new Error("invalid token prefix")
+        }
+    
+        const decoded = VerifyToken({token,secret_key:refresh_secret_key})
+    
+        if (!decoded||!decoded?.id){
+            throw new Error("invalid token")
+        }
+    
+        const user = await db_service.findOne({
+                model: userModel, 
+                id: decoded.id,
+                select: "-password"
+        }) 
+        
+        if(!user){
+            throw new Error("user not exist",{cause:400})
+        }
+
+        const access_token = GenerateToken({
+        payload:{id:user._id, email:user.email},
+        secret_key: secret_key,
+        options: {expiresIn:60*5}
+    })
+
+        
+
+    successResponse({res, message:"done", data: access_token })
+}
+
+export const updateProfile = async (req, res, next) => {
+
+    let { firstName,lastName,gender,phone } = req.body
+    if(phone) {
+        phone = encrypt(phone)
+    }
+
+    const user = await db_service.findOneAndUpdate({
+        model: userModel,
+        filter:{_id:req.user._id},
+        update: {firstName,lastName,gender,phone}
+    })
+
+    if (!user) {
+        throw new Error("user not exist yet");
+    } 
+    
+    successResponse({ res, data: user })
+}
+
+export const updatePassword = async (req, res, next) => {
+
+    let { oldPassword, newPassword } = req.body
+    
+    if (!compare({plainText: oldPassword, cipherText: req.user.password})){
+        throw new Error("invalid old password")
+
+    }
+    const hashedPassword = hash({plain_text : newPassword})
+    req.user.password = hashedPassword 
+    await req.user.save()
+    
+    successResponse({ res })
+}
+
+export const logout = async (req, res, next) => {
+    const { flag } = req.query;
+
+    if (flag == "all") {
+        req.user.changeCredential = new Date();
+        await req.user.save();
+        await deleteKey(await keys(get_key({ userId: req.user._id })));
+    } else {
+        await setValue({
+            key: revoked_key({ userId: req.user._id, jti: req.decoded.jti }),
+            value: `${req.decoded.jti}`,
+            ttl: req.decoded.exp - Math.floor(Date.now() / 1000)
+        });
+    }
+
+    successResponse({ res });
+}

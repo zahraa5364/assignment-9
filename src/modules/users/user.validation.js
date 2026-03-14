@@ -1,10 +1,11 @@
 import Joi from "joi"
 import { genderEnum } from "../../common/enum/user.enum.js"
+import { general_rules } from "../../common/utiltis/security/generalRole.js"
 
 
 export const signUpSchema = {
     body: Joi.object({
-        userName: Joi.string().min(6).max(30).required(),
+        userName: Joi.string().min(3).max(30).required(),
         email: Joi.string().email({tlds:{allow:false , deny:["org"]}, maxDomainSegments:2 , minDomainSegments:2}).required(),
         password: Joi.string().min(6).required().messages({
             "any.required": "password must not be empty",
@@ -17,6 +18,7 @@ export const signUpSchema = {
         //     name: Joi.string().required()
         // }).required() 
     }).required(),
+
     file: Joi.object({
         fieldname: Joi.string().required(),
         originalname: Joi.string().required(),
@@ -35,7 +37,7 @@ export const signUpSchema = {
 export const signInSchema = {
     body: Joi.object({
         email: Joi.string().required(),
-        password: Joi.string().min(5).required().regex(/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[a-zA-Z]).{8,}$/)
+        password: general_rules.password.required()
     }).required(),
     
     // query: Joi.object({
@@ -46,7 +48,26 @@ export const signInSchema = {
 
 export const shareProfileSchema = {
     params: Joi.object({
-        id: Joi.string().required().length(24).hex()
+        id: general_rules.id.required()
     }).required(),
 }
+
+
+export const updateProfileSchema = {
+    body: Joi.object({
+        firstName: Joi.string().min(3).max(30),
+        lastName: Joi.string().min(3).max(30),
+        phone: Joi.string(),
+        gender: Joi.string().valid(...Object.values(genderEnum)),
+    }).required(),
+}
+
+export const updatePasswordSchema = {
+    body: Joi.object({
+        newPassword: general_rules.password.required(),
+        cPassword: Joi.string().valid(Joi.ref("newPassword")),
+        oldPassword: general_rules.password.required()
+    }).required()
+}
+
 
