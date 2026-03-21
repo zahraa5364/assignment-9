@@ -1,0 +1,37 @@
+
+import nodemailer from "nodemailer";
+import { EMAIL, PASSWORD } from "../../../../config/config.js";
+
+export const sendEmail = async (
+    { to, subject = "", html = "", attachments = [] } = {}
+) => {
+
+    const transporter = nodemailer.createTransport({
+        service: "gmail",
+        // tls: {
+        //   rejectUnauthorized: false
+        // },
+
+        auth: {
+            user: EMAIL,
+            pass: PASSWORD,
+        },
+    });
+
+    const info = await transporter.sendMail({
+        from: `"zahraa" <${EMAIL}>`,
+        to,
+        subject,
+        html, 
+        attachments
+    });
+
+    console.log("Message sent:", info.messageId);
+
+    return info.accepted.length ? true : false
+}
+
+
+export const generateOtp = async () => {
+    return Math.floor(Math.random() * 900000 + 100000)
+}

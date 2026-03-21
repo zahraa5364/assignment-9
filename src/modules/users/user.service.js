@@ -10,44 +10,70 @@ import {salt_rounds,secret_key,refresh_secret_key,PREFIX} from "../../../config/
 import cloudinary from "../../common/utiltis/cloudinary.js"
 
 
+
 export const signUp = async (req, res, next) => {
-    const { userName, email, password, cPassword, gender, phone } = req.body
-
-    if (password !== cPassword) {
-        throw new Error("inValid password", { cause: 400 });
-    }
-
-    if (await db_service.findOne({ model: userModel, filter: { email } })) {
-        throw new Error("email already exist", { cause: 409 });
-    }
-
-    const {secure_url,public_id} = await cloudinary.uploader.upload(req.file.path,{
-        folder: "sarahaApp",
-        // public_id: "ahmed"
-        // use_filename: true
-        // unique_filename: false 
-        // resource_type:"image"
-    })
-
-    // let arr_paths =[]
-    // for (const file of req.files){
-    //     arr_paths.push(file.path)
-    // }
 
     const user = await db_service.create({
         model: userModel,
         data: {
             userName,
             email,
-            password: hash({ plain_text: password, salt_rounds: salt_rounds }),
+            password: hash({ plain_text: password }),
             gender,
             phone: encrypt(phone),
-            profilePicture: {secure_url,public_id}
-            // coverPictures: arr_paths
+            profilePicture: { secure_url, public_id },
         }
     })
 
-    successResponse({ res, status: 201, message: "success signup", data: user })
+    const otp = await generateOtp()
+
+    await sendEmail({
+        to: email,
+        subject: "hello from saraha app",
+        html: `<h1>your confirmation code is:${otp}</h1>`
+    })
+
+    await setValue({
+        key: otp_key({ email }),
+        value: Hash({ plain_text: `${otp}` }),
+        ttl: 60
+    })
+
+    successResponse({
+        res,
+        status: 201,
+        message: "success sign up"
+    })
+}
+
+export const confirmEmail = async (req, res, next) => {
+
+    const { code, email } = req.body
+    const otpValue = await get(otp_key({ email }))
+
+    if (!otpValue) {
+        throw new Error("otp expired")
+    }
+
+    if (!Compare({ plain_text: code, cipher_text: otpValue })) {
+        throw new Error("invalid otp")
+    }
+
+    const user = await db_service.findOneAndUpdate({
+        model: userModel,
+        filter: {
+        email,
+        confirmed: { $exists: false },
+        provider: ProviderEnum.system
+        },
+        update: { confirmed: true }
+    })
+
+    if (!user) {
+        throw new Error("user not exist or already confirmed")
+    }
+    await deleteKey(otp_key({ email }))
+    successResponse({res,message: "email confirmed successfully"})
 }
 
 
